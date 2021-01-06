@@ -4,11 +4,6 @@ project(vrmpack VERSION 0.1 LANGUAGES CXX)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 add_library(meshoptimizer
-  cgltf/cgltf.h
-  cgltf/cgltf_write.h
-  cgltf/vrm/vrm_types.v0_0.h
-  cgltf/vrm/vrm_types.v0_0.inl
-  cgltf/vrm/vrm_write.v0_0.inl
   meshoptimizer/src/meshoptimizer.h
   meshoptimizer/src/allocator.cpp
   meshoptimizer/src/clusterizer.cpp
@@ -29,7 +24,13 @@ add_library(meshoptimizer
 set_target_properties(meshoptimizer PROPERTIES LINKER_LANGUAGE CXX)
 
 set(vrmpack_FILES
+  cgltf/cgltf.h
+  cgltf/cgltf_write.h
+  cgltf/vrm/vrm_types.v0_0.h
+  cgltf/vrm/vrm_types.v0_0.inl
+  cgltf/vrm/vrm_write.v0_0.inl
   src/vrmpack.cpp
+  src/vrmpack.hpp
 )
 
 set(EXE_NAME vrmpack)
