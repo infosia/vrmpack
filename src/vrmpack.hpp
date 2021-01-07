@@ -41,6 +41,7 @@ struct Settings
 	float simplify_debug;
 
 	float target_error;
+	float target_error_aggressive;
 
 	int verbose;
 };

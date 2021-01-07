@@ -1,6 +1,9 @@
 #include "vrmpack.hpp"
 
 #include <ctype.h>
+#include <fstream>
+#include <iostream>
+#include <sstream>
 
 #define CGLTF_IMPLEMENTATION
 #define CGLTF_WRITE_IMPLEMENTATION
@@ -24,6 +27,7 @@ static Settings defaults()
 	settings.simplify_threshold = 1.f;
 	settings.simplify_aggressive = false;
 	settings.target_error = 1e-2f;
+	settings.target_error_aggressive = 1e-1f;
 	return settings;
 }
 
@@ -43,16 +47,20 @@ static void processMesh(Mesh* mesh, Settings& settings)
 {
 	const size_t target_index_count = size_t(double(mesh->indices.size() / 3) * settings.simplify_threshold) * 3;
 
-	std::vector<unsigned int> indices(mesh->indices.size());
-	if (settings.simplify_aggressive)
-	{
-		indices.resize(meshopt_simplifySloppy(&indices[0], &mesh->indices[0], mesh->indices.size(), &mesh->positions[0], mesh->vertex_count, mesh->vertex_positions_stride, target_index_count, settings.target_error));
-	}
-	else
-	{
-		indices.resize(meshopt_simplify(&indices[0], &mesh->indices[0], mesh->indices.size(), &mesh->positions[0], mesh->vertex_count, mesh->vertex_positions_stride, target_index_count, settings.target_error));
-	}
+	std::vector<uint32_t> indices(mesh->indices.size());
+	indices.resize(meshopt_simplify(&indices[0], &mesh->indices[0], mesh->indices.size(), &mesh->positions[0], mesh->vertex_count, mesh->vertex_positions_stride, target_index_count, settings.target_error));
 	mesh->indices.swap(indices);
+
+	// if the precise simplifier got "stuck", we'll try to simplify using the sloppy simplifier; this is only used when aggressive simplification is enabled as it breaks attribute discontinuities
+	if (settings.simplify_aggressive && mesh->indices.size() > target_index_count)
+	{
+		indices.resize(meshopt_simplifySloppy(&indices[0], &mesh->indices[0], mesh->indices.size(), &mesh->positions[0], mesh->vertex_count, mesh->vertex_positions_stride, target_index_count, settings.target_error_aggressive));
+		mesh->indices.swap(indices);
+	}
+
+	cgltf_accessor* accessor = mesh->primitive->indices;
+	accessor->count = indices.size();
+	accessor->buffer_view->size = indices.size() * sizeof(uint32_t);
 }
 
 static void parseIndices(Mesh* mesh, cgltf_primitive* primitive)
@@ -66,15 +74,15 @@ static void parseIndices(Mesh* mesh, cgltf_primitive* primitive)
 
 static void parseAccessors(Mesh* mesh)
 {
+	cgltf_accessor* acc_POSITION = nullptr;
+	cgltf_accessor* acc_NORMAL = nullptr;
+	cgltf_accessor* acc_TEXCOORD_0 = nullptr;
+	cgltf_accessor* acc_WEIGHTS_0  = nullptr;
+	cgltf_accessor* acc_JOINTS_0   = nullptr;
+
 	for (cgltf_size i = 0; i < mesh->primitive->attributes_count; ++i)
 	{
 		const cgltf_attribute* attr = &mesh->primitive->attributes[i];
-
-		cgltf_accessor* acc_POSITION = NULL;
-		cgltf_accessor* acc_NORMAL = NULL;
-		cgltf_accessor* acc_TEXCOORD_0 = NULL;
-		cgltf_accessor* acc_WEIGHTS_0 = NULL;
-		cgltf_accessor* acc_JOINTS_0 = NULL;
 
 		if (attr->type == cgltf_attribute_type_position)
 		{
@@ -96,51 +104,51 @@ static void parseAccessors(Mesh* mesh)
 		{
 			acc_JOINTS_0 = attr->data;
 		}
+	}
 
-		if (acc_POSITION != nullptr)
+	if (acc_POSITION != nullptr)
+	{
+		const cgltf_size unpack_count = acc_POSITION->count * 3;
+		mesh->positions.resize(unpack_count);
+		cgltf_accessor_unpack_floats(acc_POSITION, &mesh->positions[0], unpack_count);
+
+		mesh->vertex_count  = acc_POSITION->count;
+		mesh->vertex_positions_stride = acc_POSITION->stride;
+	}
+
+	if (acc_NORMAL != nullptr)
+	{
+		const cgltf_size unpack_count = acc_NORMAL->count * 3;
+		mesh->normals.resize(unpack_count);
+		cgltf_accessor_unpack_floats(acc_NORMAL, &mesh->normals[0], unpack_count);
+	}
+
+	if (acc_TEXCOORD_0 != nullptr)
+	{
+		const cgltf_size unpack_count = acc_TEXCOORD_0->count * 2;
+		mesh->texcoord.resize(unpack_count);
+		cgltf_accessor_unpack_floats(acc_TEXCOORD_0, &mesh->texcoord[0], unpack_count);
+	}
+
+	if (acc_JOINTS_0 != nullptr)
+	{
+		const cgltf_size unpack_count = acc_JOINTS_0->count * 4;
+		mesh->joints.resize(unpack_count);
+		for (cgltf_size j = 0; j < acc_JOINTS_0->count; ++j)
 		{
-			const cgltf_size unpack_count = acc_POSITION->count * 3;
-			mesh->positions.resize(unpack_count);
-			cgltf_accessor_unpack_floats(acc_POSITION, &mesh->positions[0], unpack_count);
-
-			mesh->vertex_count = acc_POSITION->count;
-			mesh->vertex_positions_stride = acc_POSITION->stride;
+			cgltf_accessor_read_uint(acc_JOINTS_0, j, &mesh->joints[0] + (j * 4), 4);
 		}
+	}
 
-		if (acc_NORMAL != nullptr)
-		{
-			const cgltf_size unpack_count = acc_NORMAL->count * 3;
-			mesh->normals.resize(unpack_count);
-			cgltf_accessor_unpack_floats(acc_NORMAL, &mesh->normals[0], unpack_count);
-		}
-
-		if (acc_TEXCOORD_0 != nullptr)
-		{
-			const cgltf_size unpack_count = acc_TEXCOORD_0->count * 2;
-			mesh->texcoord.resize(unpack_count);
-			cgltf_accessor_unpack_floats(acc_TEXCOORD_0, &mesh->texcoord[0], unpack_count);
-		}
-
-		if (acc_JOINTS_0 != nullptr)
-		{
-			const cgltf_size unpack_count = acc_JOINTS_0->count * 4;
-			mesh->joints.resize(unpack_count);
-			for (cgltf_size j = 0; j < acc_JOINTS_0->count; ++j)
-			{
-				cgltf_accessor_read_uint(acc_JOINTS_0, j, &mesh->joints[0] + (j * 4), 4);
-			}
-		}
-
-		if (acc_WEIGHTS_0 != nullptr)
-		{
-			const cgltf_size unpack_count = acc_WEIGHTS_0->count * 4;
-			mesh->weights.resize(unpack_count);
-			cgltf_accessor_unpack_floats(acc_WEIGHTS_0, &mesh->weights[0], unpack_count);
-		}
+	if (acc_WEIGHTS_0 != nullptr)
+	{
+		const cgltf_size unpack_count = acc_WEIGHTS_0->count * 4;
+		mesh->weights.resize(unpack_count);
+		cgltf_accessor_unpack_floats(acc_WEIGHTS_0, &mesh->weights[0], unpack_count);
 	}
 }
 
-static cgltf_data* parse(const char* input, std::vector<Mesh*> meshes)
+static cgltf_data* parse(const char* input, std::vector<Mesh*>& meshes)
 {
 	cgltf_options options = {};
 	cgltf_data* data = nullptr;
@@ -184,10 +192,100 @@ static cgltf_data* parse(const char* input, std::vector<Mesh*> meshes)
 	return data;
 }
 
+static void printSceneStats(cgltf_data* data, std::vector<Mesh*>& meshes)
+{
+	cgltf_size in_meshes_count  = 0;
+	cgltf_size in_indices_count = 0;
+	cgltf_size in_vertices_count = 0;
+	for (cgltf_size i = 0; i < data->meshes_count; ++i)
+	{
+		const cgltf_mesh* mesh = &data->meshes[i];
+		in_meshes_count += mesh->primitives_count;
+		for (cgltf_size j = 0; j < mesh->primitives_count; ++j) {
+			in_indices_count += mesh->primitives[j].indices->count;
+		}
+	}
+
+	cgltf_size out_meshes_count  = 0;
+	cgltf_size out_indices_count = 0;
+	cgltf_size out_vertices_count = 0;
+
+	out_meshes_count = meshes.size();
+
+	for (cgltf_size i = 0; i < meshes.size(); ++i) {
+		Mesh* m = meshes[i];
+		out_indices_count += m->indices.size();
+		in_vertices_count += m->vertex_count;
+	}
+
+	printf("input: %zd nodes, %zd primitives %zd indices, %zd vertices\n", data->nodes_count, in_meshes_count, in_indices_count, in_vertices_count);
+	printf("output: %zd nodes, %zd primitives %zd indices, %zd vertices\n", data->nodes_count, out_meshes_count, out_indices_count, out_vertices_count);
+}
+
+static cgltf_result processBufferView(cgltf_data* data)
+{
+	// fixup buffer views because index buffers has been changed.
+	for (cgltf_size b = 0; b < data->buffers_count; b++) {
+		cgltf_size offset = 0;
+		for (cgltf_size i = 0; i < data->buffer_views_count; ++i)
+		{
+			cgltf_buffer_view* buffer_view = &data->buffer_views[i];
+			buffer_view->offset = offset;
+			offset += buffer_view->size;
+		}
+		data->buffers[b].size = offset;
+	}
+
+	return cgltf_validate(data);
+}
+
+static void write_bin(cgltf_data* data, std::string output) 
+{
+	std::ofstream fout;
+	fout.open(output.c_str(), std::ios::out | std::ios::binary);
+
+	for (cgltf_size b = 0; b < data->buffers_count; b++) {
+		cgltf_buffer* buffer = &data->buffers[b];
+		fout.write(reinterpret_cast<const char*>(&buffer->size), 4);
+		fout.write(reinterpret_cast<const char*>(&GlbMagicBinChunk), 4);
+		fout.write(reinterpret_cast<const char*>(buffer->data), buffer->size);
+	}
+
+	fout.close();
+}
+
+static void write(std::string output, std::string in_json, std::string in_bin) 
+{
+	std::ifstream in_json_st (in_json,std::ios::binary);
+	std::ifstream in_bin_st (in_bin,std::ios::binary);
+	std::ofstream out_st (output,std::ios::trunc|std::ios::binary);
+
+	size_t json_size = 0;
+	size_t bin_size  = 0;
+
+	in_json_st.seekg(0, std::ios::end);
+	json_size = in_json_st.tellg();
+	in_json_st.seekg(0, std::ios::beg);
+
+	in_bin_st.seekg(0, std::ios::end);
+	bin_size = in_bin_st.tellg();
+	in_bin_st.seekg(0, std::ios::beg);
+
+	size_t total_size = GlbHeaderSize + GlbChunkHeaderSize + json_size + bin_size;
+
+	out_st.write(reinterpret_cast<const char*>(&GlbMagic),   4);
+	out_st.write(reinterpret_cast<const char*>(&GlbVersion), 4);
+	out_st.write(reinterpret_cast<const char*>(&total_size), 4);
+
+	out_st.write(reinterpret_cast<const char*>(&json_size), 4);
+	out_st.write(reinterpret_cast<const char*>(&GlbMagicJsonChunk), 4);
+
+	out_st << in_json_st.rdbuf();
+	out_st << in_bin_st.rdbuf();
+}
+
 static int vrmpack(const char* input, const char* output, Settings settings)
 {
-	(void)output, settings;
-
 	std::vector<Mesh*> meshes;
 	cgltf_data* data = parse(input, meshes);
 
@@ -201,7 +299,29 @@ static int vrmpack(const char* input, const char* output, Settings settings)
 		processMesh(meshes[i], settings);
 	}
 
+	if (processBufferView(data) != cgltf_result_success) {
+		fprintf(stderr, "Failed to process buffer view");
+	}
+
 	// output TODO
+	std::stringstream outss_json;
+	std::stringstream outss_bin;
+
+	outss_json << output << ".json";
+	outss_bin  << output << ".bin";
+
+	std::string out_json = outss_json.str();
+	std::string out_bin = outss_bin.str();
+
+	cgltf_options write_options = {};
+	cgltf_write_file(&write_options, out_json.c_str(), data);
+
+	write_bin(data, out_bin);
+	write(output, out_json, out_bin);
+
+	if (settings.verbose > 0) {
+		printSceneStats(data, meshes);
+	}
 
 	// clean up
 	for (size_t i = 0; i < meshes.size(); ++i)
