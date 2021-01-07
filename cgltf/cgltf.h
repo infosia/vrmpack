@@ -292,6 +292,7 @@ typedef struct cgltf_buffer_view
 	cgltf_extras extras;
 	cgltf_size extensions_count;
 	cgltf_extension* extensions;
+	cgltf_size buffer_index;
 } cgltf_buffer_view;
 
 typedef struct cgltf_accessor_sparse
@@ -4499,7 +4500,9 @@ static int cgltf_parse_json_buffer_view(cgltf_options* options, jsmntok_t const*
 		if (cgltf_json_strcmp(tokens+i, json_chunk, "buffer") == 0)
 		{
 			++i;
-			out_buffer_view->buffer = CGLTF_PTRINDEX(cgltf_buffer, cgltf_json_to_int(tokens + i, json_chunk));
+			int buffer_index = cgltf_json_to_int(tokens + i, json_chunk);
+			out_buffer_view->buffer = CGLTF_PTRINDEX(cgltf_buffer, buffer_index);
+			out_buffer_view->buffer_index = buffer_index;
 			++i;
 		}
 		else if (cgltf_json_strcmp(tokens+i, json_chunk, "byteOffset") == 0)

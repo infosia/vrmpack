@@ -59,8 +59,9 @@ static void processMesh(Mesh* mesh, Settings& settings)
 	}
 
 	cgltf_accessor* accessor = mesh->primitive->indices;
-	accessor->count = indices.size();
-	accessor->buffer_view->size = indices.size() * sizeof(uint32_t);
+	accessor->count = mesh->indices.size();
+	accessor->buffer_view->size = accessor->count * sizeof(uint32_t);
+	memcpy((uint8_t*)accessor->buffer_view->buffer->data + accessor->buffer_view->offset, &mesh->indices[0], accessor->buffer_view->size);
 }
 
 static void parseIndices(Mesh* mesh, cgltf_primitive* primitive)
@@ -225,13 +226,16 @@ static void printSceneStats(cgltf_data* data, std::vector<Mesh*>& meshes)
 static cgltf_result processBufferView(cgltf_data* data)
 {
 	// fixup buffer views because index buffers has been changed.
-	for (cgltf_size b = 0; b < data->buffers_count; b++) {
+	for (cgltf_size b = 0; b < data->buffers_count; b++)
+	{
 		cgltf_size offset = 0;
 		for (cgltf_size i = 0; i < data->buffer_views_count; ++i)
 		{
 			cgltf_buffer_view* buffer_view = &data->buffer_views[i];
-			buffer_view->offset = offset;
-			offset += buffer_view->size;
+			if (buffer_view->buffer_index == b) {
+				buffer_view->offset = offset;
+				offset += buffer_view->size;
+			}
 		}
 		data->buffers[b].size = offset;
 	}
@@ -243,6 +247,22 @@ static void write_bin(cgltf_data* data, std::string output)
 {
 	std::ofstream fout;
 	fout.open(output.c_str(), std::ios::out | std::ios::binary);
+
+	// re-create buffers
+	for (cgltf_size b = 0; b < data->buffers_count; b++) {
+		cgltf_buffer* buffer = &data->buffers[b];
+		uint8_t* copy = (uint8_t*)malloc(buffer->size);
+		for (cgltf_size i = 0; i < data->buffer_views_count; ++i)
+		{
+			cgltf_buffer_view* buffer_view = &data->buffer_views[i];
+			if (buffer_view->buffer_index == b) {
+				memcpy(copy, (uint8_t*)buffer->data + buffer_view->offset, buffer_view->size);
+			}
+		}
+
+		memcpy(buffer->data, copy, buffer->size);
+		free(copy);
+	}
 
 	for (cgltf_size b = 0; b < data->buffers_count; b++) {
 		cgltf_buffer* buffer = &data->buffers[b];
@@ -260,18 +280,15 @@ static void write(std::string output, std::string in_json, std::string in_bin)
 	std::ifstream in_bin_st (in_bin,std::ios::binary);
 	std::ofstream out_st (output,std::ios::trunc|std::ios::binary);
 
-	size_t json_size = 0;
-	size_t bin_size  = 0;
-
 	in_json_st.seekg(0, std::ios::end);
-	json_size = in_json_st.tellg();
+	uint32_t json_size = (uint32_t)in_json_st.tellg();
 	in_json_st.seekg(0, std::ios::beg);
 
 	in_bin_st.seekg(0, std::ios::end);
-	bin_size = in_bin_st.tellg();
+	uint32_t bin_size = (uint32_t)in_bin_st.tellg();
 	in_bin_st.seekg(0, std::ios::beg);
 
-	size_t total_size = GlbHeaderSize + GlbChunkHeaderSize + json_size + bin_size;
+	uint32_t total_size = GlbHeaderSize + GlbChunkHeaderSize + json_size + bin_size;
 
 	out_st.write(reinterpret_cast<const char*>(&GlbMagic),   4);
 	out_st.write(reinterpret_cast<const char*>(&GlbVersion), 4);
@@ -282,6 +299,8 @@ static void write(std::string output, std::string in_json, std::string in_bin)
 
 	out_st << in_json_st.rdbuf();
 	out_st << in_bin_st.rdbuf();
+
+	out_st.close();
 }
 
 static int vrmpack(const char* input, const char* output, Settings settings)
