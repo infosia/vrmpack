@@ -58,6 +58,7 @@ static void processMesh(Mesh* mesh, Settings& settings)
 		mesh->indices.swap(indices);
 	}
 
+	// update indices
 	cgltf_accessor* accessor = mesh->primitive->indices;
 	accessor->count = mesh->indices.size();
 	accessor->buffer_view->size = accessor->count * sizeof(uint32_t);
@@ -195,6 +196,11 @@ static cgltf_data* parse(const char* input, std::vector<Mesh*>& meshes)
 
 static void printSceneStats(cgltf_data* data, std::vector<Mesh*>& meshes)
 {
+	cgltf_result validate_result = cgltf_validate(data);
+	if (validate_result != cgltf_result_success) {
+		printf("Warn: glTF validation error found: %d\n", validate_result);
+	}
+
 	cgltf_size in_meshes_count  = 0;
 	cgltf_size in_indices_count = 0;
 	cgltf_size in_vertices_count = 0;
@@ -223,24 +229,30 @@ static void printSceneStats(cgltf_data* data, std::vector<Mesh*>& meshes)
 	printf("output: %zd nodes, %zd primitives %zd indices, %zd vertices\n", data->nodes_count, out_meshes_count, out_indices_count, out_vertices_count);
 }
 
-static cgltf_result processBufferView(cgltf_data* data)
+static void processBufferView(cgltf_data* data)
 {
 	// fixup buffer views because index buffers has been changed.
-	for (cgltf_size b = 0; b < data->buffers_count; b++)
+	for (cgltf_size i = 0; i < data->buffers_count; i++)
 	{
 		cgltf_size offset = 0;
-		for (cgltf_size i = 0; i < data->buffer_views_count; ++i)
+		for (cgltf_size j = 0; j < data->buffer_views_count; ++j)
 		{
-			cgltf_buffer_view* buffer_view = &data->buffer_views[i];
-			if (buffer_view->buffer_index == b) {
+			cgltf_buffer_view* buffer_view = &data->buffer_views[j];
+			if (buffer_view->buffer_index == i) {
 				buffer_view->offset = offset;
 				offset += buffer_view->size;
 			}
 		}
-		data->buffers[b].size = offset;
+		data->buffers[i].size = offset;
 	}
 
-	return cgltf_validate(data);
+	cgltf_size offset = 0;
+	for (cgltf_size i = 0; i < data->accessors_count; i++)
+	{
+		cgltf_accessor* accessor = &data->accessors[i];
+		accessor->buffer_view->offset = offset;
+		offset += accessor->buffer_view->size;
+	}
 }
 
 static void write_bin(cgltf_data* data, std::string output) 
@@ -313,16 +325,19 @@ static int vrmpack(const char* input, const char* output, Settings settings)
 		return cgltf_result_invalid_gltf;
 	}
 
+	std::stringstream inss_json;
+
+	inss_json << output << ".in.json";
+	cgltf_options write_options = {};
+	cgltf_write_file(&write_options, inss_json.str().c_str(), data);
+
 	for (size_t i = 0; i < meshes.size(); ++i)
 	{
 		processMesh(meshes[i], settings);
 	}
 
-	if (processBufferView(data) != cgltf_result_success) {
-		fprintf(stderr, "Failed to process buffer view");
-	}
+	processBufferView(data);
 
-	// output TODO
 	std::stringstream outss_json;
 	std::stringstream outss_bin;
 
@@ -332,7 +347,6 @@ static int vrmpack(const char* input, const char* output, Settings settings)
 	std::string out_json = outss_json.str();
 	std::string out_bin = outss_bin.str();
 
-	cgltf_options write_options = {};
 	cgltf_write_file(&write_options, out_json.c_str(), data);
 
 	write_bin(data, out_bin);
