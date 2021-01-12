@@ -229,52 +229,10 @@ static void printSceneStats(cgltf_data* data, std::vector<Mesh*>& meshes)
 	printf("output: %zd nodes, %zd primitives %zd indices, %zd vertices\n", data->nodes_count, out_meshes_count, out_indices_count, out_vertices_count);
 }
 
-static void processBufferView(cgltf_data* data)
-{
-	// fixup buffer views because index buffers has been changed.
-	for (cgltf_size i = 0; i < data->buffers_count; i++)
-	{
-		cgltf_size offset = 0;
-		for (cgltf_size j = 0; j < data->buffer_views_count; ++j)
-		{
-			cgltf_buffer_view* buffer_view = &data->buffer_views[j];
-			if (buffer_view->buffer_index == i) {
-				buffer_view->offset = offset;
-				offset += buffer_view->size;
-			}
-		}
-		data->buffers[i].size = offset;
-	}
-
-	cgltf_size offset = 0;
-	for (cgltf_size i = 0; i < data->accessors_count; i++)
-	{
-		cgltf_accessor* accessor = &data->accessors[i];
-		accessor->buffer_view->offset = offset;
-		offset += accessor->buffer_view->size;
-	}
-}
-
 static void write_bin(cgltf_data* data, std::string output) 
 {
 	std::ofstream fout;
 	fout.open(output.c_str(), std::ios::out | std::ios::binary);
-
-	// re-create buffers
-	for (cgltf_size b = 0; b < data->buffers_count; b++) {
-		cgltf_buffer* buffer = &data->buffers[b];
-		uint8_t* copy = (uint8_t*)malloc(buffer->size);
-		for (cgltf_size i = 0; i < data->buffer_views_count; ++i)
-		{
-			cgltf_buffer_view* buffer_view = &data->buffer_views[i];
-			if (buffer_view->buffer_index == b) {
-				memcpy(copy, (uint8_t*)buffer->data + buffer_view->offset, buffer_view->size);
-			}
-		}
-
-		memcpy(buffer->data, copy, buffer->size);
-		free(copy);
-	}
 
 	for (cgltf_size b = 0; b < data->buffers_count; b++) {
 		cgltf_buffer* buffer = &data->buffers[b];
@@ -335,8 +293,6 @@ static int vrmpack(const char* input, const char* output, Settings settings)
 	{
 		processMesh(meshes[i], settings);
 	}
-
-	processBufferView(data);
 
 	std::stringstream outss_json;
 	std::stringstream outss_bin;
