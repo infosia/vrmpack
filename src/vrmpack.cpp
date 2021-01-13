@@ -265,7 +265,8 @@ static void processBuffers(cgltf_data* data, std::vector<Mesh*> meshes)
             if (buffer_view->buffer_index == b) {
                 memcpy(dst + dst_offset, (uint8_t*)buffer->data + buffer_view->offset, buffer_view->size);
 				buffer_view->offset = dst_offset;
-				dst_offset += buffer_view->size;
+				// align each bufferView by 4 bytes
+				dst_offset += (buffer_view->size + 3) & ~3;
             }
         }
 
