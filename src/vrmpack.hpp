@@ -29,11 +29,6 @@ struct Mesh
 	cgltf_accessor* indices_accessor;
 
 	std::vector<cgltf_float> positions;
-	std::vector<cgltf_float> normals;
-	std::vector<cgltf_float> texcoord;
-	std::vector<cgltf_float> weights;
-	std::vector<cgltf_uint>  joints;
-
 };
 
 struct Settings
