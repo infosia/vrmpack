@@ -11,6 +11,7 @@ This tool is experimental work indented to try out mesh-simplification algorithm
 
 This tool provides an interface to two simplification algorithms that reduce the number of triangles in the mesh. Use only with `-si` option is usually recommended, but if you want more aggressive result, specify `-sa` option too that doesn't follow the topology of the original mesh. This means that it doesn't preserve attribute seams or borders, but it can collapse internal details that are too small to matter better because it can merge mesh features that are topologically disjoint but spatially close.
 
+![alicia](figures\alicia.jpg)
 
 ## Usage
 
@@ -26,6 +27,16 @@ This simplifies meshes to achieve the ratio R (default: 1; R should be between 0
 
 * `-si R`: simplify meshes to achieve the ratio R (default: 1; R should be between 0 and 1)
 * `-sa`: aggressively simplify to the target ratio disregarding quality
+
+## Building
+
+You need [Cmake](https://cmake.org/download/) and Visual Studio with C++ environment installed. You don't need Unity nor UniVRM to build athis. There is a CMakeLists.txt file which has been tested with [Cmake](https://cmake.org/download/) on Windows. For instance in order to generate a Visual Studio 10 project, run cmake like this:
+
+
+```
+> mkdir build; cd build
+> cmake -G "Visual Studio 10" ..
+```
 
 ## License
 
