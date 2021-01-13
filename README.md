@@ -11,7 +11,9 @@ This tool is experimental work indented to try out mesh-simplification algorithm
 
 This tool provides an interface to two simplification algorithms that reduce the number of triangles in the mesh. Use only with `-si` option is usually recommended, but if you want more aggressive result, specify `-sa` option too that doesn't follow the topology of the original mesh. This means that it doesn't preserve attribute seams or borders, but it can collapse internal details that are too small to matter better because it can merge mesh features that are topologically disjoint but spatially close.
 
-![alicia](figures\alicia.jpg)
+<p align="center">
+<img src="figures/alicia.jpg" /><br/>
+</p>
 
 ## Usage
 
