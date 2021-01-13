@@ -26,6 +26,8 @@ struct Mesh
 	size_t vertex_count;
 	size_t vertex_positions_stride;
 
+	cgltf_accessor* indices_accessor;
+
 	std::vector<cgltf_float> positions;
 	std::vector<cgltf_float> normals;
 	std::vector<cgltf_float> texcoord;

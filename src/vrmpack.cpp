@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <set>
 
 #define CGLTF_IMPLEMENTATION
 #define CGLTF_WRITE_IMPLEMENTATION
@@ -57,16 +58,11 @@ static void processMesh(Mesh* mesh, Settings& settings)
 		indices.resize(meshopt_simplifySloppy(&indices[0], &mesh->indices[0], mesh->indices.size(), &mesh->positions[0], mesh->vertex_count, mesh->vertex_positions_stride, target_index_count, settings.target_error_aggressive));
 		mesh->indices.swap(indices);
 	}
-
-	// update indices
-	cgltf_accessor* accessor = mesh->primitive->indices;
-	accessor->count = mesh->indices.size();
-	accessor->buffer_view->size = accessor->count * sizeof(uint32_t);
-	memcpy((uint8_t*)accessor->buffer_view->buffer->data + accessor->buffer_view->offset, &mesh->indices[0], accessor->buffer_view->size);
 }
 
 static void parseIndices(Mesh* mesh, cgltf_primitive* primitive)
 {
+	mesh->indices_accessor = primitive->indices;
 	mesh->indices.resize(primitive->indices->count);
 	for (cgltf_size i = 0; i < primitive->indices->count; ++i)
 	{
@@ -234,14 +230,49 @@ static void write_bin(cgltf_data* data, std::string output)
 	std::ofstream fout;
 	fout.open(output.c_str(), std::ios::out | std::ios::binary);
 
-	for (cgltf_size b = 0; b < data->buffers_count; b++) {
-		cgltf_buffer* buffer = &data->buffers[b];
+	for (cgltf_size i = 0; i < data->buffers_count; i++) {
+		cgltf_buffer* buffer = &data->buffers[i];
 		fout.write(reinterpret_cast<const char*>(&buffer->size), 4);
 		fout.write(reinterpret_cast<const char*>(&GlbMagicBinChunk), 4);
 		fout.write(reinterpret_cast<const char*>(buffer->data), buffer->size);
 	}
 
 	fout.close();
+}
+
+static void processBuffers(cgltf_data* data, std::vector<Mesh*> meshes)
+{
+	// update indices assuming indices never increase.
+	std::set<cgltf_size> buffers_changed;
+	for (const auto mesh : meshes) {
+	    cgltf_accessor* accessor = mesh->indices_accessor;
+
+	    accessor->count = mesh->indices.size();
+	    accessor->buffer_view->size = accessor->count * sizeof(uint32_t);
+	    memcpy((uint8_t*)accessor->buffer_view->buffer->data + accessor->buffer_view->offset, &mesh->indices[0], accessor->buffer_view->size);
+
+		buffers_changed.insert(mesh->indices_accessor->buffer_view->buffer_index);
+	}
+
+	// re-create buffers
+	for (const auto b : buffers_changed) {
+        cgltf_buffer* buffer = &data->buffers[b];
+        uint8_t* dst = (uint8_t*)malloc(buffer->size);
+		cgltf_size dst_offset = 0;
+        for (cgltf_size i = 0; i < data->buffer_views_count; ++i)
+        {
+            cgltf_buffer_view* buffer_view = &data->buffer_views[i];
+            if (buffer_view->buffer_index == b) {
+                memcpy(dst + dst_offset, (uint8_t*)buffer->data + buffer_view->offset, buffer_view->size);
+				buffer_view->offset = dst_offset;
+				dst_offset += buffer_view->size;
+            }
+        }
+
+		data->buffers[b].size = dst_offset;
+        memcpy(buffer->data, dst, dst_offset);
+		free(dst);
+	}
 }
 
 static void write(std::string output, std::string in_json, std::string in_bin) 
@@ -293,6 +324,8 @@ static int vrmpack(const char* input, const char* output, Settings settings)
 	{
 		processMesh(meshes[i], settings);
 	}
+
+	processBuffers(data, meshes);
 
 	std::stringstream outss_json;
 	std::stringstream outss_bin;
