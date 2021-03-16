@@ -2,9 +2,11 @@
 
 vrmpack is a tool that can automatically optimize VRM files to improve loading and rendering speed.
 
+**vrmpack is not maintained anymore. VRM optimizer will be moved to [meshoptimizer](https://github.com/infosia/meshoptimizer)**
+
 ## Purpose
 
-This tool is experimental work indented to try out mesh-simplification algorithms that is provided by [meshoptimizer](https://github.com/zeux/meshoptimizer). *Currently this tool optimizes index buffer only, so you'll see only slightly changes regarding binary size*. Please do not use this in production :)
+This tool is experimental work indented to try out mesh-simplification algorithms that is provided by [meshoptimizer](https://github.com/infosia/meshoptimizer). *Currently this tool optimizes index buffer only, so you'll see only slightly changes regarding binary size*. Please do not use this in production :)
 
 
 ## Simplification
